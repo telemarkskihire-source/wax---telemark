@@ -88,26 +88,34 @@ def prp_type(df):
     return df.apply(f, axis=1)
 
 def build_df(js, hours, tzname):
-    h = js["hourly"]; df = pd.DataFrame(h); df["time"] = pd.to_datetime(df["time"])
-    now = pd.Timestamp.now(tz=tz.gettz(js.get("timezone", tzname)))
-    df = df[df["time"] >= now.floor("H")].head(hours).reset_index(drop=True)
+    h = js["hourly"]
+    df = pd.DataFrame(h)
+    df["time"] = pd.to_datetime(df["time"])  # <- orari NAIVE
+
+    now_naive = pd.Timestamp.now().floor("H")  # <- confronto NAIVE
+    df = df[df["time"] >= now_naive].head(hours).reset_index(drop=True)
+
     out = pd.DataFrame()
     out["time"] = df["time"].dt.strftime("%Y-%m-%dT%H:%M:%S")
     out["T2m"] = df["temperature_2m"].astype(float)
-    out["cloud"] = (df["cloudcover"].astype(float)/100).clip(0,1)
-    out["wind"] = (df["windspeed_10m"].astype(float)/3.6).round(3)
+    out["cloud"] = (df["cloudcover"].astype(float) / 100).clip(0, 1)
+    out["wind"] = (df["windspeed_10m"].astype(float) / 3.6).round(3)
     out["sunup"] = df["is_day"].astype(int)
     out["prp_mmph"] = df["precipitation"].astype(float)
+
     extra = df[["precipitation","rain","snowfall","weathercode"]].copy()
     out["prp_type"] = prp_type(extra)
     out["td"] = df["dew_point_2m"].astype(float)
     return out
 
+
 def window_slice(res, tzname, s, e):
-    t = pd.to_datetime(res["time"]).dt.tz_localize(tz.gettz(tzname), nonexistent='shift_forward', ambiguous='NaT')
-    D = res.copy(); D["dt"] = t
-    today = pd.Timestamp.now(tz=tz.gettz(tzname)).date()
-    win = D[(D["dt"].dt.date==today) & (D["dt"].dt.time>=s) & (D["dt"].dt.time<=e)]
+    import pandas as pd
+    from dateutil import tz as _tz
+    times = pd.to_datetime(res["time"]).dt.tz_localize(_tz.gettz(tzname), nonexistent='shift_forward', ambiguous='NaT')
+    D = res.copy(); D["dt"] = times
+    today = pd.Timestamp.now(tz=_tz.gettz(tzname)).date()
+    win = D[(D["dt"].dt.date == today) & (D["dt"].dt.time >= s) & (D["dt"].dt.time <= e)]
     return win if not win.empty else D.head(7)
 
 def plots(res):
