@@ -1,5 +1,6 @@
-# mini_app_telemark_pretty_autofill.py
-# Telemark · Snow Temps + Wax · Mobile-first UI + A/B/C + Ricerca località con autofill (Open-Meteo Geocoding)
+# app.py — Telemark · Snow Temps + Wax (con ricerca località autocompletata)
+# Requisiti: streamlit, pandas, requests, python-dateutil, matplotlib
+# + core_snowtemp.py nella stessa cartella (contiene compute_snow_temperature)
 
 import streamlit as st
 import pandas as pd
@@ -37,8 +38,7 @@ st.markdown(f"""
   border-radius:16px; padding:14px;
   box-shadow: 0 8px 20px rgba(0,0,0,.25);
 }}
-.kpi {{
-  display:flex; flex-direction:column; gap:2px;
+.kpi {{ display:flex; flex-direction:column; gap:2px;
   background:rgba(16,191,207,.06); border:1px dashed rgba(16,191,207,.45);
   padding:10px 12px; border-radius:12px;
 }}
@@ -55,7 +55,7 @@ st.markdown(f"""
 }}
 .section-title {{ color:{TEXT}; opacity:.95; margin:8px 0 4px 2px; }}
 hr {{ border-color: rgba(255,255,255,.1) }}
-.small {{ font-size:.82rem; opacity:.85; }}
+.small {{ font-size:.82rem; opacity:.8 }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -64,79 +64,47 @@ colA, colB = st.columns([1,3], vertical_alignment="center")
 with colA:
     st.markdown(f"<div class='hero'><h1>Telemark · Snow Temps + Wax</h1></div>", unsafe_allow_html=True)
 with colB:
-    st.markdown(f"<span class='badge'>Mobile-first · Open-Meteo · Autofill località · Consigli sciolina</span>", unsafe_allow_html=True)
+    st.markdown(f"<span class='badge'>Mobile-first · Previsioni Open-Meteo · Ricerca località con autofill</span>", unsafe_allow_html=True)
 
-# ---------------------- GLOBALE SESSIONE ----------------------
-if "chosen_place" not in st.session_state:
-    st.session_state.chosen_place = None  # dict con name, lat, lon, timezone
-
-# ---------------------- GEO SEARCH (AUTOFILL) ----------------------
-def geocode_search(query: str, count: int = 10) -> list[dict]:
-    """Cerca toponimi con autocomplete (Open-Meteo geocoding)."""
+# ---------------------- GEO AUTOCOMPLETE ----------------------
+@st.cache_data(show_spinner=False)
+def geocode(query: str, count: int = 12):
+    """Open-Meteo Geocoding API – restituisce suggerimenti mentre scrivi."""
+    if not query or len(query.strip()) < 2:
+        return []
     url = "https://geocoding-api.open-meteo.com/v1/search"
-    params = {"name": query, "count": count, "language": "it", "format": "json"}
+    params = {"name": query.strip(), "count": count, "language": "it", "format": "json"}
     r = requests.get(url, params=params, timeout=15)
     r.raise_for_status()
-    js = r.json()
-    return js.get("results", []) or []
+    js = r.json() or {}
+    results = js.get("results", []) or []
+    out = []
+    for rec in results:
+        name = rec.get("name", "")
+        admin1 = rec.get("admin1") or rec.get("admin2") or ""
+        country = rec.get("country", "")
+        lat = rec.get("latitude"); lon = rec.get("longitude")
+        tzname = rec.get("timezone") or "Europe/Rome"
+        label = f"{name} — {admin1}, {country}  ({lat:.3f}, {lon:.3f})"
+        out.append({"label": label, "lat": lat, "lon": lon, "tz": tzname})
+    return out
 
-def format_place(p: dict) -> str:
-    # "Nome, Admin1, Paese (lat, lon)"
-    parts = [p.get("name")]
-    if p.get("admin1"): parts.append(p["admin1"])
-    if p.get("country"): parts.append(p["country"])
-    label = ", ".join([x for x in parts if x])
-    lat = f'{p.get("latitude", ""):.3f}' if "latitude" in p else "?"
-    lon = f'{p.get("longitude", ""):.3f}' if "longitude" in p else "?"
-    return f"{label} ({lat}, {lon})"
+st.markdown("<p class='section-title'>1) Cerca la località</p>", unsafe_allow_html=True)
+q = st.text_input("Digita una località (es. Champoluc, Gressoney, Alagna, Aosta…)", placeholder="Scrivi almeno 2 lettere…")
+suggestions = geocode(q, 12) if q else []
+labels = [s["label"] for s in suggestions]
+sel_label = st.selectbox("Suggerimenti", labels, index=0 if labels else None, placeholder="Seleziona dalla lista che si aggiorna mentre scrivi…")
 
-st.markdown("<p class='section-title'>1) Cerca la località (autofill) e scarica i dati</p>", unsafe_allow_html=True)
+# coord default (fallback Champoluc)
+lat, lon, tzname = 45.831, 7.730, "Europe/Rome"
+if sel_label:
+    sel = next((s for s in suggestions if s["label"] == sel_label), None)
+    if sel:
+        lat, lon, tzname = sel["lat"], sel["lon"], sel["tz"]
 
-c_search = st.container()
-with c_search:
-    col_s1, col_s2 = st.columns([3,2])
-    with col_s1:
-        query = st.text_input("Località (digita almeno 2 lettere)", placeholder="Es. Champoluc, Cervinia, Alagna…")
-        suggestions = []
-        if len(query.strip()) >= 2:
-            try:
-                suggestions = geocode_search(query.strip(), count=12)
-            except Exception as e:
-                st.error(f"Errore ricerca località: {e}")
-        if suggestions:
-            labels = [format_place(p) for p in suggestions]
-            idx = st.selectbox("Scegli tra i suggerimenti", options=list(range(len(labels))), format_func=lambda i: labels[i])
-            if st.button("Usa questa località", type="primary"):
-                pick = suggestions[idx]
-                st.session_state.chosen_place = {
-                    "name": format_place(pick),
-                    "lat": float(pick["latitude"]),
-                    "lon": float(pick["longitude"]),
-                    "tz": pick.get("timezone", "Europe/Rome")
-                }
-                st.success(f"Selezionato: {st.session_state.chosen_place['name']}")
-        else:
-            st.caption("Suggerimenti mostrati automaticamente mentre digiti (fonte: Open-Meteo Geocoding).")
-    with col_s2:
-        # fallback se vuoi impostare a mano
-        st.markdown("**Impostazione manuale (opzionale)**")
-        lat = st.number_input("Lat", value=45.831, format="%.6f", key="lat_manual")
-        lon = st.number_input("Lon", value=7.730, format="%.6f", key="lon_manual")
-        tzname = st.selectbox("Timezone", ["Europe/Rome","UTC"], index=0, key="tz_manual")
-        if st.button("Usa lat/lon manuali"):
-            st.session_state.chosen_place = {"name": f"Custom ({lat:.3f}, {lon:.3f})", "lat": float(lat), "lon": float(lon), "tz": tzname}
-            st.success(f"Selezionato: {st.session_state.chosen_place['name']}")
-
-st.markdown("<div class='small'>Se hai già scelto: "
-            f"<b>{st.session_state.chosen_place['name'] if st.session_state.chosen_place else 'nessuna località selezionata'}</b></div>",
-            unsafe_allow_html=True)
-
-# Ore previsione
-hours = st.slider("Ore di previsione", 12, 168, 72, 12)
-
-# ---------------------- FINESTRE A/B/C ----------------------
+# ---------------------- FINESTRE A/B/C E OPZIONI ----------------------
 st.markdown("<p class='section-title'>2) Finestre orarie (oggi): A · B · C</p>", unsafe_allow_html=True)
-b1,b2,b3 = st.columns(3)
+b1, b2, b3 = st.columns(3)
 with b1:
     st.markdown("**Blocco A**")
     A_start = st.time_input("Inizio A", value=time(9,0), key="A_s")
@@ -150,18 +118,17 @@ with b3:
     C_start = st.time_input("Inizio C", value=time(13,0), key="C_s")
     C_end   = st.time_input("Fine C",   value=time(16,0), key="C_e")
 
-st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-fetch = st.container()
-with fetch:
-    colf1, colf2, colf3 = st.columns([2,2,3])
-    with colf1:
-        go = st.button("Scarica previsioni", type="primary", use_container_width=True)
-    with colf2:
-        upl = st.file_uploader("…oppure carica CSV", type=["csv"])
-    with colf3:
-        st.caption("CSV richiesto: time, T2m, cloud, wind, sunup, prp_mmph, prp_type, td*")
+opt1, opt2 = st.columns(2)
+with opt1:
+    hours = st.slider("Ore di previsione", 12, 168, 72, 12)
+with opt2:
+    tz_over = st.text_input("Timezone (IANA)", value=tzname or "Europe/Rome")
+    tzname = tz_over or tzname
 
-# ---------------------- HELPERS METEO ----------------------
+st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+go = st.button("Scarica previsioni e calcola", type="primary")
+
+# ---------------------- METEO HELPERS ----------------------
 def fetch_open_meteo(lat, lon, timezone_str):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -188,7 +155,7 @@ def prp_type(df):
     return df.apply(f, axis=1)
 
 def build_df(js, hours, tzname):
-    # Manteniamo gli orari "naive" per evitare errori tz-aware vs naive
+    # Manteniamo i tempi "naive" per evitare conflitti tz-aware
     h = js["hourly"]; df = pd.DataFrame(h); df["time"] = pd.to_datetime(df["time"])
     now_naive = pd.Timestamp.now().floor("H")
     df = df[df["time"] >= now_naive].head(hours).reset_index(drop=True)
@@ -223,21 +190,23 @@ def make_plots(res):
     plt.title("Precipitazione (mm/h)"); plt.xlabel("Ora"); plt.ylabel("mm/h")
     return fig1, fig2
 
+# ---------------------- WAX SUGGESTIONS ----------------------
+SWIX = [("PS5 Turquoise", -18,-10), ("PS6 Blue",-12,-6), ("PS7 Violet",-8,-2), ("PS8 Red",-4,4), ("PS10 Yellow",0,10)]
+TOKO = [("Blue",-30,-9), ("Red",-12,-4), ("Yellow",-6,0)]
+VOLA = [("MX-E Violet/Blue",-12,-4), ("MX-E Red",-5,0), ("MX-E Warm",-2,10)]
+RODE = [("R20 Blue",-18,-8), ("R30 Violet",-10,-3), ("R40 Red",-5,0), ("R50 Yellow",-1,10)]
+
+def _pick(bands, t):
+    for name, tmin, tmax in bands:
+        if t>=tmin and t<=tmax: return name
+    return bands[-1][0] if t>bands[-1][2] else bands[0][0]
+
 def wax_cards(t_med, wet):
-    # Brand bands essenziali (non-fluoro)
-    SWIX = [("PS5 Turquoise", -18,-10), ("PS6 Blue",-12,-6), ("PS7 Violet",-8,-2), ("PS8 Red",-4,4), ("PS10 Yellow",0,10)]
-    TOKO = [("Blue",-30,-9), ("Red",-12,-4), ("Yellow",-6,0)]
-    VOLA = [("MX-E Violet/Blue",-12,-4), ("MX-E Red",-5,0), ("MX-E Warm",-2,10)]
-    RODE = [("R20 Blue",-18,-8), ("R30 Violet",-10,-3), ("R40 Red",-5,0), ("R50 Yellow",-1,10)]
-    def pick(bands,t):
-        for n,tmin,tmax in bands:
-            if t>=tmin and t<=tmax: return n
-        return bands[-1][0] if t>bands[-1][2] else bands[0][0]
-    rows = st.columns(4)
-    rows[0].markdown(f"<div class='kpi'><div class='label'>Swix</div><div class='value'>{pick(SWIX,t_med)}</div></div>", unsafe_allow_html=True)
-    rows[1].markdown(f"<div class='kpi'><div class='label'>Toko</div><div class='value'>{pick(TOKO,t_med)}</div></div>", unsafe_allow_html=True)
-    rows[2].markdown(f"<div class='kpi'><div class='label'>Vola</div><div class='value'>{pick(VOLA,t_med)}</div></div>", unsafe_allow_html=True)
-    rows[3].markdown(f"<div class='kpi'><div class='label'>Rode</div><div class='value'>{pick(RODE,t_med)}</div></div>", unsafe_allow_html=True)
+    cols = st.columns(4)
+    cols[0].markdown(f"<div class='kpi'><div class='label'>Swix</div><div class='value'>{_pick(SWIX,t_med)}</div></div>", unsafe_allow_html=True)
+    cols[1].markdown(f"<div class='kpi'><div class='label'>Toko</div><div class='value'>{_pick(TOKO,t_med)}</div></div>", unsafe_allow_html=True)
+    cols[2].markdown(f"<div class='kpi'><div class='label'>Vola</div><div class='value'>{_pick(VOLA,t_med)}</div></div>", unsafe_allow_html=True)
+    cols[3].markdown(f"<div class='kpi'><div class='label'>Rode</div><div class='value'>{_pick(RODE,t_med)}</div></div>", unsafe_allow_html=True)
     if t_med <= -10:
         st.markdown("<span class='tag'>Neve fredda · struttura fine</span>", unsafe_allow_html=True)
     if -3 <= t_med <= 1 and wet:
@@ -262,14 +231,14 @@ def badge(win):
     </div>""", unsafe_allow_html=True)
     return wet
 
-# ---------------------- MAIN ----------------------
-def run(res, tzname):
+# ---------------------- MAIN FLOW ----------------------
+def run(res):
     st.markdown("### Risultati")
     st.dataframe(res, use_container_width=True)
     fig1, fig2 = make_plots(res); st.pyplot(fig1); st.pyplot(fig2)
     st.download_button("Scarica CSV", data=res.to_csv(index=False), file_name="forecast_with_snowT.csv", mime="text/csv")
 
-    st.markdown("### Consigli per blocchi A · B · C")
+    st.markdown("### Consigli A · B · C")
     def slice_(s,e): 
         t = pd.to_datetime(res["time"]).dt.tz_localize(tz.gettz(tzname), nonexistent='shift_forward', ambiguous='NaT')
         D = res.copy(); D["dt"] = t
@@ -283,25 +252,17 @@ def run(res, tzname):
         wet = badge(W)
         t_med = float(W["T_surf"].mean())
         wax_cards(t_med, wet)
+        st.caption(f"T_surf medio blocco {label}: **{t_med:.1f} °C**", help="Media sulla finestra oraria selezionata")
 
-# Flusso principale
+# Esecuzione
 try:
-    if upl is not None:
-        df = pd.read_csv(upl)
-        res = compute_snow_temperature(df, dt_hours=1.0)
-        st.success("CSV caricato.")
-        run(res, tzname=st.session_state.chosen_place["tz"] if st.session_state.chosen_place else "Europe/Rome")
-    elif go:
-        if not st.session_state.chosen_place:
-            st.warning("Seleziona una località dai suggerimenti (o usa lat/lon manuali).")
-        else:
-            lat = st.session_state.chosen_place["lat"]; lon = st.session_state.chosen_place["lon"]; tzname = st.session_state.chosen_place["tz"]
-            js = fetch_open_meteo(lat, lon, tzname)
-            src = build_df(js, hours, tzname)
-            res = compute_snow_temperature(src, dt_hours=1.0)
-            st.success(f"Previsioni scaricate per: {st.session_state.chosen_place['name']}")
-            run(res, tzname)
+    if go:
+        js = fetch_open_meteo(lat, lon, tzname)
+        src = build_df(js, hours, tzname)
+        res = compute_snow_temperature(src, dt_hours=1.0)
+        st.success(f"Previsioni scaricate per {sel_label or 'località selezionata'}")
+        run(res)
     else:
-        st.info("Cerca una località, scegli A/B/C e premi **Scarica previsioni** (oppure carica un CSV).")
+        st.info("Digita la località (il menu si aggiorna mentre scrivi), scegli A/B/C e premi **Scarica previsioni e calcola**.")
 except Exception as e:
     st.error(f"Errore: {e}")
