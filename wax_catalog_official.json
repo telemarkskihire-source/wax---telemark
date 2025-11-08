@@ -1,0 +1,204 @@
+{
+  "Swix_PS": {
+    "source": "swixsport.com product pages",
+    "items": [
+      {
+        "name": "PS5 Turquoise",
+        "tmin": -18,
+        "tmax": -10,
+        "src": "https://www.swixsport.com/en/wax/tuning-side-edge/care-maintenance/ps5-turquoise-60g"
+      },
+      {
+        "name": "PS6 Blue",
+        "tmin": -12,
+        "tmax": -6,
+        "src": "https://www.swixsport.com/en/wax/glidewax/pro/non-fluoro/ps6-blue-60g"
+      },
+      {
+        "name": "PS7 Violet",
+        "tmin": -8,
+        "tmax": -2,
+        "src": "https://www.swixsport.com/en/wax/glidewax/pro/non-fluoro/ps7-violet-60g"
+      },
+      {
+        "name": "PS8 Red",
+        "tmin": -4,
+        "tmax": 4,
+        "src": "https://www.swixsport.com/en/wax/glidewax/pro/non-fluoro/ps8-red-60g"
+      },
+      {
+        "name": "PS10 Yellow",
+        "tmin": 0,
+        "tmax": 10,
+        "src": "https://www.swixsport.com/en/wax/glidewax/pro/non-fluoro/ps10-yellow-60g"
+      }
+    ]
+  },
+  "Toko_PerformanceHotWax": {
+    "source": "toko.ch",
+    "items": [
+      {
+        "name": "Blue",
+        "tmin": -30,
+        "tmax": -9,
+        "src": "https://www.toko.ch/en/products/details/5502015-performance-hot-wax-blue"
+      },
+      {
+        "name": "Red",
+        "tmin": -12,
+        "tmax": -4,
+        "src": "https://www.toko.ch/en/products/details/5502013-performance-hot-wax-red"
+      },
+      {
+        "name": "Yellow",
+        "tmin": -6,
+        "tmax": 0,
+        "src": "https://www.toko.ch/en/products/details/5502011-performance-hot-wax-yellow"
+      }
+    ]
+  },
+  "Vola_MX-E": {
+    "source": "vola.fr",
+    "items": [
+      {
+        "name": "MX-E Blue (Cold)",
+        "tmin": -25,
+        "tmax": -10,
+        "src": "https://vola.fr/en/sport/farts/mew"
+      },
+      {
+        "name": "MX-E Violet (Mid)",
+        "tmin": -12,
+        "tmax": -4,
+        "src": "https://vola.fr/en/sport/farts/mew"
+      },
+      {
+        "name": "MX-E Red (Warm)",
+        "tmin": -5,
+        "tmax": 0,
+        "src": "https://vola.fr/en/sport/farts/race/mx-e-red-200g"
+      },
+      {
+        "name": "MX-E Yellow (Very warm)",
+        "tmin": -2,
+        "tmax": 6,
+        "src": "https://vola.fr/en/sport/farts/mew"
+      }
+    ]
+  },
+  "Rode_RacingGlider": {
+    "source": "rodewax.com",
+    "items": [
+      {
+        "name": "R20 Blue",
+        "tmin": -18,
+        "tmax": -8,
+        "src": "https://skiwax.ca/products/rode-r20-non-fluoro-paraffin"
+      },
+      {
+        "name": "R30 Violet",
+        "tmin": -10,
+        "tmax": -3,
+        "src": "https://skiwax.ca/products/rode-r30-non-fluoro-paraffin"
+      },
+      {
+        "name": "R40 Red",
+        "tmin": 0,
+        "tmax": -5,
+        "src": "https://www.rodewax.com/p/en-racing-glide-r40-rossa-ski-wax-glide-wax-solid-paraffin-wax-fluor-free-race-competition-downhill-cross-country-snowboard-new-transformed-snow-900g/"
+      },
+      {
+        "name": "R50 Yellow",
+        "tmin": -1,
+        "tmax": 10,
+        "src": "https://skiwax.ca/products/rode-r50-non-fluoro-paraffin"
+      }
+    ]
+  },
+  "Holmenkol_Mixes": {
+    "source": "holmenkol b2b + retailer pages",
+    "items": [
+      {
+        "name": "Ultra Mix Blue",
+        "tmin": -20,
+        "tmax": -8,
+        "src": "https://b2b.holmenkol.com/de/en/SNOW/Basic-wax/"
+      },
+      {
+        "name": "BetaMix Red",
+        "tmin": -14,
+        "tmax": -4,
+        "src": "https://www.skiwax.eu/holmenkol-glider-betamix-red-4-14-c-2x35g-24114/"
+      },
+      {
+        "name": "AlphaMix Yellow",
+        "tmin": -4,
+        "tmax": 0,
+        "src": "https://the-raceplace.com/products/holmenkol-base-wax"
+      }
+    ]
+  },
+  "Maplus_Universal": {
+    "source": "brikomaplus.de official shop",
+    "items": [
+      {
+        "name": "Universal Soft (Yellow)",
+        "tmin": -5,
+        "tmax": 0,
+        "src": "https://brikomaplus.de/en/Wax/Universal-wax/"
+      },
+      {
+        "name": "Universal Medium",
+        "tmin": -7,
+        "tmax": -2,
+        "src": "https://brikomaplus.de/en/Wax/Universal-wax/"
+      },
+      {
+        "name": "Universal Cold (Green)",
+        "tmin": -12,
+        "tmax": -6,
+        "src": "https://brikomaplus.de/en/Wax/Universal-wax/"
+      }
+    ]
+  },
+  "Skigo_FF": {
+    "source": "skigo official shop",
+    "items": [
+      {
+        "name": "Red (training/comp)",
+        "tmin": -5,
+        "tmax": 1,
+        "src": "https://shopen.skigo.se/en/products/fft-red-glides"
+      },
+      {
+        "name": "Blue (training/comp)",
+        "tmin": -12,
+        "tmax": -6,
+        "src": "https://shopen.skigo.se/en/products/ffa-red-slides"
+      }
+    ]
+  },
+  "Start_SG": {
+    "source": "Start guide + retailers",
+    "items": [
+      {
+        "name": "SG Red",
+        "tmin": -3,
+        "tmax": 7,
+        "src": "https://skimo.co/start-sg-liquid-wax"
+      },
+      {
+        "name": "SG Purple",
+        "tmin": -8,
+        "tmax": -2,
+        "src": "https://skimo.co/start-sg-liquid-wax"
+      },
+      {
+        "name": "SG Blue",
+        "tmin": -12,
+        "tmax": -6,
+        "src": "https://pioneermidwest.com/products/start-basic-glider-sg8-blue-180g"
+      }
+    ]
+  }
+}
