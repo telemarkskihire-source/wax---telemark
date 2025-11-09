@@ -2,7 +2,6 @@
 import streamlit as st
 import pandas as pd
 import requests, base64, math
-import numpy as np
 import matplotlib.pyplot as plt
 from datetime import time
 from dateutil import tz
@@ -31,7 +30,7 @@ h1,h2,h3,h4,h5, label, p, span, div {{ color:{TEXT}; }}
 """, unsafe_allow_html=True)
 
 st.markdown("### Telemark · Pro Wax & Tune")
-st.markdown("<span class='badge'>Ricerca tipo Meteoblue · Blocchi A/B/C · Sciolina + Struttura + Angoli (SIDE)</span>", unsafe_allow_html=True)
+st.markdown("<span class='badge'>Ricerca tipo Meteoblue · Blocchi A/B/C · 8 marchi sciolina · Struttura · Angoli (SIDE)</span>", unsafe_allow_html=True)
 
 # ------------------------ UTILS ------------------------
 def flag_emoji(country_code: str) -> str:
@@ -41,7 +40,7 @@ def flag_emoji(country_code: str) -> str:
     except Exception:
         return "🏳️"
 
-# Search function for st_searchbox (chiamata ad ogni carattere)
+# Search function for st_searchbox (si richiama ad ogni tasto, no Enter)
 def nominatim_search(search: str):
     if not search or len(search) < 2:
         return []
@@ -55,14 +54,15 @@ def nominatim_search(search: str):
         r.raise_for_status()
         out = []
         st.session_state._geo_map = {}
-        for i, item in enumerate(r.json()):
+        for item in r.json():
             name = item.get("display_name", "")
             lat = float(item.get("lat", 0)); lon = float(item.get("lon", 0))
-            cc = (item.get("address", {}) or {}).get("country_code", "") or ""
+            addr = item.get("address", {}) or {}
+            cc = addr.get("country_code", "") or ""
             label = f"{flag_emoji(cc)}  {name}"
             key = f"{label}|||{lat:.6f},{lon:.6f}"
             st.session_state._geo_map[key] = (lat, lon, label)
-            out.append(key)
+            out.append(key)                  # la searchbox mostra questo testo e noi mappiamo con _geo_map
         return out
     except Exception:
         return []
@@ -74,13 +74,15 @@ selected = st_searchbox(
     key="place",
     placeholder="Digita e scegli… (es. Champoluc, Cervinia, Sestriere)",
     clear_on_submit=False,
-    default=None
+    default=None,
 )
 
+# decode selection -> lat,lon,label
 if selected and "|||" in selected and "_geo_map" in st.session_state:
     lat, lon, label = st.session_state._geo_map.get(selected, (45.831, 7.730, "Champoluc (Ramey)"))
     st.session_state.sel_lat, st.session_state.sel_lon, st.session_state.sel_label = lat, lon, label
 
+# fallback se non ancora scelto
 lat = st.session_state.get("sel_lat", 45.831)
 lon = st.session_state.get("sel_lon", 7.730)
 label = st.session_state.get("sel_label", "Champoluc (Ramey)")
@@ -132,7 +134,7 @@ def _prp_type(df):
 
 def build_df(js, hours):
     h = js["hourly"]; df = pd.DataFrame(h)
-    df["time"] = pd.to_datetime(df["time"])
+    df["time"] = pd.to_datetime(df["time"])         # naive
     now0 = pd.Timestamp.now().floor("H")
     df = df[df["time"] >= now0].head(hours).reset_index(drop=True)
     out = pd.DataFrame()
@@ -184,16 +186,25 @@ def window_slice(res, tzname, s, e):
     W = D[(D["dt"].dt.date==today) & (D["dt"].dt.time>=s) & (D["dt"].dt.time<=e)]
     return W if not W.empty else D.head(7)
 
-# ------------------------ WAX BANDS (più marchi) ------------------------
+# ------------------------ WAX BANDS (8 marchi) ------------------------
 SWIX = [("PS5 Turquoise", -18,-10), ("PS6 Blue",-12,-6), ("PS7 Violet",-8,-2), ("PS8 Red",-4,4), ("PS10 Yellow",0,10)]
 TOKO = [("Blue",-30,-9), ("Red",-12,-4), ("Yellow",-6,0)]
-VOLA = [("MX-E Violet/Blue",-12,-4), ("MX-E Red",-5,0), ("MX-E Warm",-2,10)]
+VOLA = [("MX-E Blue",-25,-10), ("MX-E Violet",-12,-4), ("MX-E Red",-5,0), ("MX-E Yellow",-2,6)]
 RODE = [("R20 Blue",-18,-8), ("R30 Violet",-10,-3), ("R40 Red",-5,0), ("R50 Yellow",-1,10)]
-HOLMENKOL = [("Alpha Mix Cold",-20,-8), ("Alpha Mix Mid",-10,-2), ("Beta Mix Warm",-3,6)]
-MAPLUS = [("BP1 Blue",-20,-8), ("BP2 Violet",-12,-3), ("BP3 Red",-5,2), ("Universal Soft",0,10)]
-STAR = [("Beta Blue",-18,-8), ("Beta Violet",-10,-3), ("Beta Red",-5,2)]
-DOMINATOR = [("Zoom Graphite Cold",-18,-8), ("Zoom Universal",-10,2), ("Zoom Warm",-2,8)]
-
+HOLM = [("Ultra/Alpha Mix Blue",-20,-8), ("BetaMix Red",-14,-4), ("AlphaMix Yellow",-4,5)]
+MAPL = [("Universal Cold",-12,-6), ("Universal Medium",-7,-2), ("Universal Soft",-5,0)]
+START= [("SG Blue",-12,-6), ("SG Purple",-8,-2), ("SG Red",-3,7)]
+SKIGO= [("Blue",-12,-6), ("Violet",-8,-2), ("Red",-3,2)]
+BRAND_BANDS = [
+    ("Swix"      ,"#ef4444", SWIX),
+    ("Toko"      ,"#f59e0b", TOKO),
+    ("Vola"      ,"#3b82f6", VOLA),
+    ("Rode"      ,"#22c55e", RODE),
+    ("Holmenkol" ,"#06b6d4", HOLM),
+    ("Maplus"    ,"#f97316", MAPL),
+    ("Start"     ,"#eab308", START),
+    ("Skigo"     ,"#a855f7", SKIGO),
+]
 def pick(bands, t):
     for n,tmin,tmax in bands:
         if t>=tmin and t<=tmax: return n
@@ -201,108 +212,43 @@ def pick(bands, t):
 
 # ------------------------ STRUCTURE & EDGES ------------------------
 def tune_for(t_surf, discipline):
-    # SIDE in gradi (88°, 87.5°…) + BASE in gradi
+    # SIDE (gradi) + BASE (gradi) e struttura “famiglia” stile Wintersteiger
     if t_surf <= -10:
-        structure = ("linear_fine", "Freddo/Secco · Lineare fine")
+        fam = ("linear","Lineare fine (freddo/secco)")
         base = 0.5; side_map = {"SL":88.5, "GS":88.0, "SG":87.5, "DH":87.5}
     elif t_surf <= -3:
-        structure = ("wave_convex", "Universale · Onda convessa")
+        fam = ("cross","Universale incrociata / leggera onda")
         base = 0.7; side_map = {"SL":88.0, "GS":88.0, "SG":87.5, "DH":87.0}
     else:
-        structure = ("diag_drain", "Caldo/Umido · Scarico diagonale")
+        fam = ("V","Scarico a V / diagonale (umido/caldo)")
         base = 0.8 if t_surf <= 0.5 else 1.0
         side_map = {"SL":88.0, "GS":87.5, "SG":87.0, "DH":87.0}
-    return structure, side_map.get(discipline, 88.0), base
+    return fam, side_map.get(discipline, 88.0), base
 
-# ---- Disegni strutture stile Wintersteiger (più realistici) ----
-def _structure_canvas(title, draw_fn):
-    fig = plt.figure(figsize=(3.0, 2.0), dpi=160)
-    ax = plt.gca()
-    ax.set_facecolor("#d9d9dd")          # base soletta
-    ax.set_xlim(0, 100); ax.set_ylim(0, 60)
-    ax.axis("off")
-    # Cornice scura per dare idea di bordi soletta
-    ax.add_patch(plt.Rectangle((2,2), 96,56, fill=False, linewidth=1.2, color="#6b7280"))
-    draw_fn(ax)
-    ax.set_title(title, fontsize=10, pad=4, color="#0f172a")
+def draw_structure(kind: str, title: str):
+    # Anteprima “alla Wintersteiger”: base grigia + gole scure/sature, ritmo costante
+    fig = plt.figure(figsize=(3.4, 2.0), dpi=180)
+    ax = plt.gca(); ax.set_facecolor("#d6d6d6")
+    ax.set_xlim(0, 100); ax.set_ylim(0, 60); ax.axis('off')
+    color = "#2b2b2b"
+    if kind == "linear":
+        for x in range(8, 98, 5):
+            ax.plot([x, x], [6, 54], color=color, linewidth=2.6, solid_capstyle="round")
+    elif kind == "cross":
+        for x in range(-10, 120, 10):
+            ax.plot([x, x+50], [6, 54], color=color, linewidth=2.2, alpha=0.95)
+        for x in range(10, 110, 10):
+            ax.plot([x, x-50], [6, 54], color=color, linewidth=2.2, alpha=0.95)
+    elif kind == "V":
+        for x in range(-10, 120, 8):
+            ax.plot([x, 50], [6, 30], color=color, linewidth=2.6, alpha=0.95)
+            ax.plot([x, 50], [54, 30], color=color, linewidth=2.6, alpha=0.95)
+    ax.set_title(title, fontsize=10, pad=4)
     st.pyplot(fig)
 
-def draw_linear_fine():
-    def _d(ax):
-        for x in np.arange(8, 92, 4.8):
-            ax.plot([x, x], [6, 54], linewidth=2.0, color="#3a3a3f", solid_capstyle="round")
-    _structure_canvas("Lineare fine", _d)
-
-def draw_linear_medium():
-    def _d(ax):
-        for x in np.arange(8, 92, 7.0):
-            ax.plot([x, x], [6, 54], linewidth=2.8, color="#38383c", solid_capstyle="round")
-    _structure_canvas("Lineare media", _d)
-
-def draw_diag_drain():
-    def _d(ax):
-        for x in np.arange(-15, 120, 9):
-            ax.plot([x, x+52], [6, 54], linewidth=3.2, color="#35353a", solid_capstyle="round")
-    _structure_canvas("Scarico diagonale", _d)
-
-def draw_cross_45():
-    def _d(ax):
-        for x in np.arange(-18, 120, 12):
-            ax.plot([x, x+52], [6, 54], linewidth=2.4, color="#3a3a3f")
-        for x in np.arange(120, -18, -12):
-            ax.plot([x, x-52], [6, 54], linewidth=2.0, color="#4a4a50")
-    _structure_canvas("Cross 45°", _d)
-
-def draw_wave_convex():
-    def _d(ax):
-        xs = np.linspace(6, 94, 9)
-        t = np.linspace(-math.pi, math.pi, 120)
-        for x in xs:
-            y = 30 + 20*np.sin(t)
-            ax.plot(np.full_like(y, x), y, linewidth=2.6, color="#333338", solid_capstyle="round")
-    _structure_canvas("Onda convessa", _d)
-
-def draw_chevron():
-    def _d(ax):
-        # V a lisca di pesce (chevron/herringbone)
-        for y in np.arange(8, 54, 6.5):
-            ax.plot([10, 50], [y, y+10], linewidth=2.2, color="#3b3b40")
-            ax.plot([50, 90], [y+10, y], linewidth=2.2, color="#3b3b40")
-    _structure_canvas("Chevron (lisca)", _d)
-
-def draw_combo_linear_micro():
-    def _d(ax):
-        # Linear media + micro-linee trasverse sottili
-        for x in np.arange(8, 92, 7.0):
-            ax.plot([x, x], [6, 54], linewidth=2.6, color="#37373c")
-        for y in np.arange(10, 52, 10):
-            ax.plot([8, 92], [y, y], linewidth=1.2, color="#4b4b52")
-    _structure_canvas("Combinata (linear + micro)", _d)
-
-STRUCTURE_DRAWERS = {
-    "linear_fine": draw_linear_fine,
-    "linear_medium": draw_linear_medium,
-    "diag_drain": draw_diag_drain,
-    "cross_45": draw_cross_45,
-    "wave_convex": draw_wave_convex,
-    "chevron": draw_chevron,
-    "combo": draw_combo_linear_micro,
-}
-
-def logo(text, color):
+def logo_badge(text, color):
     svg = f"<svg xmlns='http://www.w3.org/2000/svg' width='160' height='36'><rect width='160' height='36' rx='6' fill='{color}'/><text x='12' y='24' font-size='16' font-weight='700' fill='white'>{text}</text></svg>"
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-
-BRANDS = {
-    "Swix": ("#ef4444", SWIX),
-    "Toko": ("#f59e0b", TOKO),
-    "Vola": ("#3b82f6", VOLA),
-    "Rode": ("#22c55e", RODE),
-    "Holmenkol": ("#0ea5e9", HOLMENKOL),
-    "Briko-Maplus": ("#f97316", MAPLUS),
-    "Star": ("#eab308", STAR),
-    "Dominator": ("#a855f7", DOMINATOR),
-}
 
 # ------------------------ RUN ------------------------
 st.markdown("#### 3) Scarica dati meteo & calcola")
@@ -330,41 +276,35 @@ if go:
             t_med = float(W["T_surf"].mean())
             st.markdown(f"**T_surf medio {L}: {t_med:.1f}°C**")
 
-            # Wax cards + loghi
-            cols = st.columns(len(BRANDS))
-            for i,(brand,(col,bands)) in enumerate(BRANDS.items()):
+            # wax cards 8 marchi (2 righe 4+4)
+            cols = st.columns(4)
+            cols2 = st.columns(4)
+            for i,(brand,col,bands) in enumerate(BRAND_BANDS[:4]):
                 rec = pick(bands, t_med)
                 cols[i].markdown(
-                    f"<div class='brand'><img src='{logo(brand.upper(), col)}'/>"
+                    f"<div class='brand'><img src='{logo_badge(brand.upper(), col)}'/>"
+                    f"<div><div style='font-size:.8rem;opacity:.85'>{brand}</div>"
+                    f"<div style='font-weight:800'>{rec}</div></div></div>", unsafe_allow_html=True
+                )
+            for i,(brand,col,bands) in enumerate(BRAND_BANDS[4:]):
+                rec = pick(bands, t_med)
+                cols2[i].markdown(
+                    f"<div class='brand'><img src='{logo_badge(brand.upper(), col)}'/>"
                     f"<div><div style='font-size:.8rem;opacity:.85'>{brand}</div>"
                     f"<div style='font-weight:800'>{rec}</div></div></div>", unsafe_allow_html=True
                 )
 
-            # Preset struttura selezionabile + disegno
-            st.caption("Preset struttura (stile Wintersteiger)")
-            preset = st.selectbox(
-                f"Struttura (Blocco {L})",
-                [
-                    ("linear_fine", "Freddo/Secco · Lineare fine"),
-                    ("linear_medium", "Lineare media (universale freddo-medio)"),
-                    ("wave_convex", "Onda convessa (universale)"),
-                    ("diag_drain", "Scarico diagonale (caldo/umido)"),
-                    ("cross_45", "Cross 45° (neve trasformata)"),
-                    ("chevron", "Chevron / lisca (gara sprint)"),
-                    ("combo", "Combinata linear + micro (all-round)"),
-                ],
-                index=2,
-                key=f"preset_{L}"
-            )
-            code, label_struct = preset
-            STRUCTURE_DRAWERS.get(code, draw_linear_fine)()
+            # struttura + angoli (SIDE/BASE)
+            fam, side, base = tune_for(t_med, "GS")  # riferimento
+            st.markdown(f"**Struttura consigliata:** {fam[1]}  ·  **Lamina SIDE:** {side:.1f}°  ·  **BASE:** {base:.1f}°")
+            draw_structure(fam[0], fam[1])
 
-            # Tuning discipline con side/base
+            # personalizza per disciplina
             disc = st.multiselect(f"Discipline (Blocco {L})", ["SL","GS","SG","DH"], default=["SL","GS"], key=f"disc_{L}")
             rows = []
             for d in disc:
-                (auto_code, auto_label), side, base = tune_for(t_med, d)
-                rows.append([d, label_struct if preset else auto_label, f"{side:.1f}°", f"{base:.1f}°"])
+                fam_d, side_d, base_d = tune_for(t_med, d)
+                rows.append([d, fam_d[1], f"{side_d:.1f}°", f"{base_d:.1f}°"])
             if rows:
                 st.table(pd.DataFrame(rows, columns=["Disciplina","Struttura","Lamina SIDE (°)","Lamina BASE (°)"]))
     except Exception as e:
