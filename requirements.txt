@@ -1,1 +1,6 @@
-pip install streamlit pandas requests python-dateutil matplotlib streamlit-searchbox
+streamlit
+pandas
+requests
+python-dateutil
+matplotlib
+streamlit-searchbox
