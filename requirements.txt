@@ -1,6 +1,6 @@
-streamlit
-pandas
-requests
-python-dateutil
-matplotlib
-streamlit-searchbox
+streamlit==1.33.0
+pandas==2.2.2
+requests==2.31.0
+python-dateutil==2.9.0.post0
+matplotlib==3.8.4
+streamlit-searchbox==0.3.2
