@@ -1,5 +1,5 @@
-streamlit>=1.39
-pandas>=2.2
-requests>=2.31
-python-dateutil>=2.9
-matplotlib>=3.8
+streamlit
+pandas
+requests
+python-dateutil
+matplotlib
