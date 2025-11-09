@@ -1,5 +1,6 @@
-streamlit
-pandas
-requests
-python-dateutil
-matplotlib
+streamlit>=1.39,<1.52
+pandas>=2.1,<2.3
+requests>=2.31
+python-dateutil>=2.8
+matplotlib>=3.8,<3.9
+streamlit-searchbox==0.3.2
