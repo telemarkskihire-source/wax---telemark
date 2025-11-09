@@ -2,13 +2,18 @@
 import streamlit as st
 import pandas as pd
 import requests, base64, math
-import numpy as np
 import matplotlib.pyplot as plt
 from datetime import time
 from dateutil import tz
-from streamlit_searchbox import st_searchbox  # dropdown live, stile meteoblue
 
-# ------------------------ PAGE & THEME ------------------------
+# ========== TRY SEARCHBOX (Meteoblue-like). FALLBACK IF MISSING ==========
+_HAVE_SB = True
+try:
+    from streamlit_searchbox import st_searchbox  # pip install streamlit-searchbox
+except Exception:
+    _HAVE_SB = False
+
+# ============================= PAGE & THEME ==============================
 PRIMARY = "#10bfcf"; BG = "#0f172a"; CARD = "#0f172a"; TEXT = "#eef2ff"
 st.set_page_config(page_title="Telemark · Pro Wax & Tune", page_icon="❄️", layout="wide")
 st.markdown(f"""
@@ -27,23 +32,27 @@ h1,h2,h3,h4,h5, label, p, span, div {{ color:{TEXT}; }}
        border:1px dashed rgba(16,191,207,.45); padding:10px 12px; border-radius:12px; }}
 .kpi .lab {{ font-size:.78rem; color:#93c5fd; }}
 .kpi .val {{ font-size:1rem; font-weight:800; }}
-.note {{ font-size:.78rem; opacity:.8; }}
+.sugg {{ font-size:.92rem; }}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("### Telemark · Pro Wax & Tune")
-st.markdown("<span class='badge'>Ricerca tipo Meteoblue · Blocchi A/B/C · Sciolina + Struttura + Angoli (SIDE)</span>", unsafe_allow_html=True)
+st.markdown("<span class='badge'>Ricerca stile Meteoblue · Preset veloci · Blocchi A/B/C · Sciolina + Struttura + Angoli (SIDE)</span>", unsafe_allow_html=True)
 
-# ------------------------ UTILS ------------------------
+# ================================ UTILS =================================
 def flag_emoji(country_code: str) -> str:
-    """Convert ISO-2 country code to emoji flag."""
     try:
         cc = country_code.upper()
         return chr(127397 + ord(cc[0])) + chr(127397 + ord(cc[1]))
     except Exception:
         return "🏳️"
 
-# Search function for st_searchbox (chiamata a ogni carattere)
+def logo_svg(text, color):
+    svg = f"<svg xmlns='http://www.w3.org/2000/svg' width='160' height='36'><rect width='160' height='36' rx='6' fill='{color}'/><text x='12' y='24' font-size='16' font-weight='700' fill='white'>{text}</text></svg>"
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("utf-8")
+
+# ========================= LOCATION SEARCH ==============================
+# Live search at each keystroke (like Meteoblue)
 def nominatim_search(search: str):
     if not search or len(search) < 2:
         return []
@@ -69,33 +78,64 @@ def nominatim_search(search: str):
     except Exception:
         return []
 
-# ------------------------ LOCATION (Meteoblue-like) ------------------------
 st.markdown("#### 1) Cerca località")
-selected = st_searchbox(
-    nominatim_search,
-    key="place",
-    placeholder="Digita e scegli… (es. Champoluc, Cervinia, Sestriere)",
-    clear_on_submit=False,
-    default=None
-)
+col_search, col_presets = st.columns([2.2, 1.8])
 
-# decode selection -> lat,lon,label
-if selected and "|||" in selected and "_geo_map" in st.session_state:
-    lat, lon, label = st.session_state._geo_map.get(selected, (45.831, 7.730, "Champoluc (Ramey)"))
+with col_search:
+    if _HAVE_SB:
+        selected = st_searchbox(
+            nominatim_search,
+            key="place",
+            placeholder="Digita e scegli… (es. Champoluc, Cervinia, Sestriere)",
+            clear_on_submit=False,  # mantiene il testo come su meteoblue
+            default=None
+        )
+    else:
+        # Fallback: aggiorna a ogni carattere con dropdown simulato
+        q = st.text_input("Ricerca (autocompletamento live)", placeholder="Es. Champoluc, Cervinia, Sestriere")
+        opts = nominatim_search(q)
+        selected = st.selectbox("Suggerimenti", opts, index=0 if opts else None, placeholder="—", label_visibility="collapsed")
+
+with col_presets:
+    st.caption("Preset rapidi")
+    preset_clicked = None
+    c1, c2 = st.columns(2)
+    if c1.button("🏔️ Champoluc"):
+        preset_clicked = (45.831, 7.730, "🇮🇹 Champoluc, Aosta Valley, Italy")
+    if c2.button("🏔️ Gressoney"):
+        preset_clicked = (45.824, 7.827, "🇮🇹 Gressoney-La-Trinité (Stafal), Italy")
+    c3, c4 = st.columns(2)
+    if c3.button("⛷️ Alagna"):
+        preset_clicked = (45.855, 7.941, "🇮🇹 Alagna Valsesia (Pianalunga), Italy")
+    if c4.button("🗻 Cervinia"):
+        preset_clicked = (45.936, 7.630, "🇮🇹 Breuil-Cervinia, Italy")
+    c5, c6 = st.columns(2)
+    if c5.button("🎿 Sestriere"):
+        preset_clicked = (44.955, 6.878, "🇮🇹 Sestriere, Italy")
+    if c6.button("⛰️ Courmayeur"):
+        preset_clicked = (45.792, 6.972, "🇮🇹 Courmayeur, Italy")
+
+# Decode user selection OR preset
+if preset_clicked:
+    lat, lon, label = preset_clicked
+    st.session_state.sel_lat, st.session_state.sel_lon, st.session_state.sel_label = lat, lon, label
+elif selected and "|||" in str(selected) and "_geo_map" in st.session_state:
+    lat, lon, label = st.session_state._geo_map.get(selected, (45.831, 7.730, "🇮🇹 Champoluc (Ramey), Italy"))
     st.session_state.sel_lat, st.session_state.sel_lon, st.session_state.sel_label = lat, lon, label
 
-# Fallback default se non c'è selezione
+# Defaults
 lat = st.session_state.get("sel_lat", 45.831)
 lon = st.session_state.get("sel_lon", 7.730)
-label = st.session_state.get("sel_label", "Champoluc (Ramey)")
+label = st.session_state.get("sel_label", "🇮🇹 Champoluc (Ramey), Italy")
 
+# Basic controls (no lat/lon fields)
 coltz, colh = st.columns([1,2])
 with coltz:
     tzname = st.selectbox("Timezone", ["Europe/Rome", "UTC"], index=0)
 with colh:
     hours = st.slider("Ore previsione", 12, 168, 72, 12)
 
-# ------------------------ WINDOWS A/B/C ------------------------
+# =========================== WINDOWS A/B/C ===============================
 st.markdown("#### 2) Finestre orarie A · B · C (oggi)")
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -108,7 +148,7 @@ with c3:
     C_start = st.time_input("Inizio C", time(13, 0), key="C_s")
     C_end   = st.time_input("Fine C",   time(16, 0), key="C_e")
 
-# ------------------------ DATA PIPELINE ------------------------
+# ============================ DATA PIPELINE ==============================
 def fetch_open_meteo(lat, lon, timezone_str):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -123,12 +163,12 @@ def _prp_type(df):
     snow_codes = {71,73,75,77,85,86}
     rain_codes = {51,53,55,61,63,65,80,81,82}
     def f(row):
-        prp = row.precipitation; rain = getattr(row,"rain",0.0); snow = getattr(row,"snowfall",0.0)
-        if prp<=0 or pd.isna(prp): return "none"
-        if rain>0 and snow>0: return "mixed"
-        if snow>0 and rain==0: return "snow"
-        if rain>0 and snow==0: return "rain"
-        code = int(getattr(row,"weathercode",0)) if pd.notna(getattr(row,"weathercode",None)) else 0
+        prp = row.precipitation; rain = getattr(row, "rain", 0.0); snow = getattr(row, "snowfall", 0.0)
+        if prp <= 0 or pd.isna(prp): return "none"
+        if rain > 0 and snow > 0: return "mixed"
+        if snow > 0 and rain == 0: return "snow"
+        if rain > 0 and snow == 0: return "rain"
+        code = int(getattr(row, "weathercode", 0)) if pd.notna(getattr(row, "weathercode", None)) else 0
         if code in snow_codes: return "snow"
         if code in rain_codes: return "rain"
         return "mixed"
@@ -136,7 +176,7 @@ def _prp_type(df):
 
 def build_df(js, hours):
     h = js["hourly"]; df = pd.DataFrame(h)
-    df["time"] = pd.to_datetime(df["time"])         # naive
+    df["time"] = pd.to_datetime(df["time"])   # naive timestamps
     now0 = pd.Timestamp.now().floor("H")
     df = df[df["time"] >= now0].head(hours).reset_index(drop=True)
     out = pd.DataFrame()
@@ -188,127 +228,82 @@ def window_slice(res, tzname, s, e):
     W = D[(D["dt"].dt.date==today) & (D["dt"].dt.time>=s) & (D["dt"].dt.time<=e)]
     return W if not W.empty else D.head(7)
 
-# ------------------------ WAX BANDS ------------------------
+# ============================ WAX BANDS ===============================
+# Ripristino marchi completi: Swix, Toko, Vola, Rode, Holmenkol, Maplus, Start, Skigo
 SWIX = [("PS5 Turquoise", -18,-10), ("PS6 Blue",-12,-6), ("PS7 Violet",-8,-2), ("PS8 Red",-4,4), ("PS10 Yellow",0,10)]
 TOKO = [("Blue",-30,-9), ("Red",-12,-4), ("Yellow",-6,0)]
-VOLA = [("MX-E Violet/Blue",-12,-4), ("MX-E Red",-5,0), ("MX-E Warm",-2,10)]
+VOLA = [("MX-E Blue/Violet",-25,-8), ("MX-E Violet (Mid)",-12,-4), ("MX-E Red (Warm)",-5,0), ("MX-E Yellow (Very Warm)",-2,6)]
 RODE = [("R20 Blue",-18,-8), ("R30 Violet",-10,-3), ("R40 Red",-5,0), ("R50 Yellow",-1,10)]
+HOLM = [("Ultra/Alpha Mix Blue",-20,-8), ("BetaMix Red",-14,-4), ("AlphaMix Yellow",-4,5)]
+MAPL = [("Universal Cold",-12,-6), ("Universal Medium",-7,-2), ("Universal Warm",-3,6)]
+START= [("SG Blue",-12,-6), ("SG Purple",-8,-2), ("SG Red",-3,7)]
+SKIGO= [("Paraffin Blue",-12,-6), ("Paraffin Violet",-8,-2), ("Paraffin Red",-3,2)]
+
 def pick(bands, t):
     for n,tmin,tmax in bands:
         if t>=tmin and t<=tmax: return n
     return bands[-1][0] if t>bands[-1][2] else bands[0][0]
 
-# ------------------------ STRUTTURE STILE WINTERSTEIGER ------------------------
-# Preset con etichette chiare (come i pannelli macchina)
-STRUCTURE_PRESETS = {
-    "Lineare fine (Freddo/Secco)"  : ("linear_fine",  "Solchi paralleli sottili per attrito ridotto su neve fredda e secca"),
-    "Onda convessa (Universale)"   : ("wave_convex",  "Archi morbidi a raggio lungo per scorrimento polivalente"),
-    "Scarico diagonale (Caldo/Umido)" : ("diagonal_drain", "Canali inclinati per evacuazione acqua libera"),
-    "Cross incrociata"             : ("cross",        "Diagonali incrociate per neve variabile/trasformata"),
-    "Chevron (freccia)"            : ("chevron",      "V solcati orientati → più direzionalità e rilascio acqua"),
-    "Broken-wave (stone medium)"   : ("broken_wave",  "Onde spezzate/segmentate tipiche pietra media"),
+BRANDS = {
+    "Swix":      ("#ef4444", SWIX),
+    "Toko":      ("#f59e0b", TOKO),
+    "Vola":      ("#3b82f6", VOLA),
+    "Rode":      ("#22c55e", RODE),
+    "Holmenkol": ("#6366f1", HOLM),
+    "Maplus":    ("#06b6d4", MAPL),
+    "Start":     ("#fb7185", START),
+    "Skigo":     ("#a3e635", SKIGO),
 }
 
-def auto_preset(t_surf: float, wet: bool) -> str:
-    """Selezione automatica simile alle tabelle officina."""
-    if wet or t_surf > -1.0:
-        return "diagonal_drain"
-    if -8.0 <= t_surf <= -1.0:
-        return "wave_convex"
-    if t_surf <= -12.0:
-        return "linear_fine"
-    # fallback
-    return "cross"
+# =================== STRUCTURE & EDGES (improved draw) ===================
+def tune_for(t_surf, discipline):
+    # SIDE (gradi) + BASE (gradi) e struttura consigliata
+    if t_surf <= -10:
+        structure = ("linear_fine", "Freddo/Secco · Lineare fine")
+        base = 0.5; side_map = {"SL":88.5, "GS":88.0, "SG":87.5, "DH":87.5}
+    elif t_surf <= -3:
+        structure = ("wave_mid", "Universale · Onda convessa")
+        base = 0.7; side_map = {"SL":88.0, "GS":88.0, "SG":87.5, "DH":87.0}
+    else:
+        structure = ("drain_diag", "Caldo/Umido · Scarico diagonale")
+        base = 0.8 if t_surf <= 0.5 else 1.0
+        side_map = {"SL":88.0, "GS":87.5, "SG":87.0, "DH":87.0}
+    return structure, side_map.get(discipline, 88.0), base
 
 def draw_structure(kind: str, title: str):
-    """
-    Render realistico: base grigio chiaro, righe scure con spessori e raggio simili a schede Wintersteiger.
-    Niente seaborn, un solo plot come richiesto.
-    """
+    """Preview più chiara stile Wintersteiger: base grigia, incisioni scure con profondità e bordo."""
+    import numpy as np
     fig = plt.figure(figsize=(3.6, 2.2), dpi=160)
-    ax  = plt.gca()
-    ax.set_facecolor("#d9d9de")                 # soletta
-    groove = "#5d6066"                          # colore righe utensile
-    ax.set_xlim(0, 100); ax.set_ylim(0, 60); ax.axis("off")
+    ax = plt.gca()
+    ax.set_facecolor("#d9d9de")  # soletta
+    ax.set_xlim(0, 120); ax.set_ylim(0, 60); ax.axis('off')
+    # bordo soletta
+    ax.add_patch(plt.Rectangle((2,2), 116, 56, fill=False, linewidth=1.2, edgecolor="#555"))
 
     if kind == "linear_fine":
-        # 0.5–0.7 mm passo equivalente → tante linee sottili
-        for x in np.arange(8, 92, 4.5):
-            ax.plot([x, x], [6, 54], linewidth=2.0, color=groove, solid_capstyle="round")
+        # molte righe sottili verticali
+        for x in range(8, 112, 5):
+            ax.plot([x, x], [6, 54], color="#444", linewidth=1.8, solid_capstyle="round")
+    elif kind == "wave_mid":
+        # colonne con andamento sinusoidale (convesso) più grosso
+        xs = np.linspace(10, 110, 9)
+        basey = np.linspace(6, 54, 120)
+        for x in xs:
+            yy = 30 + 20*np.sin(np.linspace(-math.pi, math.pi, len(basey)))
+            ax.plot(np.full_like(yy, x), yy, color="#3a3a3a", linewidth=2.6, solid_capstyle="round")
+    elif kind == "drain_diag":
+        # scarico diagonale (taglio) più marcato
+        for x in range(-20, 140, 10):
+            ax.plot([x, x+60], [6, 54], color="#2f2f2f", linewidth=3.2, solid_capstyle="round")
+    else:
+        # fallback lineare
+        for x in range(8, 112, 6):
+            ax.plot([x, x], [6, 54], color="#444", linewidth=2.0, solid_capstyle="round")
 
-    elif kind == "wave_convex":
-        # archi dolci con offset (simula rullo convesso)
-        xs = np.linspace(6, 94, 7)
-        y  = np.linspace(6, 54, 180)
-        for i, cx in enumerate(xs):
-            amp = 10 + 1.2*i
-            curve = 30 + amp*np.sin(np.linspace(-np.pi, np.pi, y.size))
-            ax.plot(np.full_like(y, cx), curve, linewidth=2.6, color=groove, solid_capstyle="round")
-
-    elif kind == "diagonal_drain":
-        # canali inclinati larghi (scarico)
-        for x in np.arange(-20, 120, 10):
-            ax.plot([x, x+55], [4, 56], linewidth=3.2, color=groove, solid_capstyle="round")
-
-    elif kind == "cross":
-        # incrocio diagonale fine
-        for x in np.arange(-25, 125, 10):
-            ax.plot([x, x+55], [4, 56], linewidth=2.4, color=groove, alpha=.95, solid_capstyle="round")
-            ax.plot([x+55, x], [4, 56], linewidth=2.0, color=groove, alpha=.65, solid_capstyle="round")
-
-    elif kind == "chevron":
-        # V ripetuti (micro-chevron)
-        for x in np.arange(5, 95, 8):
-            ax.plot([x-6, x], [10, 32], linewidth=2.6, color=groove, solid_capstyle="round")
-            ax.plot([x, x+6], [32, 10], linewidth=2.6, color=groove, solid_capstyle="round")
-            ax.plot([x-6, x], [50, 28], linewidth=2.6, color=groove, solid_capstyle="round")
-            ax.plot([x, x+6], [28, 50], linewidth=2.6, color=groove, solid_capstyle="round")
-
-    elif kind == "broken_wave":
-        # onde spezzate (segmenti curvi)
-        cx = np.linspace(10, 90, 6)
-        for c in cx:
-            for k in range(6):
-                t0 = -np.pi + k*0.9
-                t1 = t0 + 0.55
-                t  = np.linspace(t0, t1, 30)
-                y  = 30 + 14*np.sin(t) + (k%2)*1.2
-                x  = np.full_like(y, c)
-                ax.plot(x, y, linewidth=2.4, color=groove, solid_capstyle="round")
-
-    ax.set_title(title, fontsize=10, pad=4)
+    ax.set_title(title, fontsize=10, pad=4, color="#111")
     st.pyplot(fig)
 
-# Tuning (angoli + suggerimento struttura)
-def tune_for(t_surf, discipline, wet: bool):
-    # SIDE (gradi) + BASE (gradi) + preset struttura
-    if wet or t_surf > -1:
-        preset = "diagonal_drain"; base = 0.8 if t_surf <= 0.5 else 1.0
-        side_map = {"SL":88.0, "GS":87.5, "SG":87.0, "DH":87.0}
-        desc = "Caldo/Umido · Scarico diagonale"
-    elif t_surf <= -10:
-        preset = "linear_fine"; base = 0.5
-        side_map = {"SL":88.5, "GS":88.0, "SG":87.5, "DH":87.5}
-        desc = "Freddo/Secco · Lineare fine"
-    else:
-        preset = "wave_convex"; base = 0.7
-        side_map = {"SL":88.0, "GS":88.0, "SG":87.5, "DH":87.0}
-        desc = "Universale · Onda convessa"
-    return desc, side_map.get(discipline, 88.0), base, preset
-
-# ------------------------ LOGHI WAX ------------------------
-def logo(text, color):
-    svg = f"<svg xmlns='http://www.w3.org/2000/svg' width='160' height='36'><rect width='160' height='36' rx='6' fill='{color}'/><text x='12' y='24' font-size='16' font-weight='700' fill='white'>{text}</text></svg>"
-    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("utf-8")
-
-BRANDS = {
-    "Swix": ("#ef4444", SWIX),
-    "Toko": ("#f59e0b", TOKO),
-    "Vola": ("#3b82f6", VOLA),
-    "Rode": ("#22c55e", RODE),
-}
-
-# ------------------------ RUN ------------------------
+# =============================== RUN ====================================
 st.markdown("#### 3) Scarica dati meteo & calcola")
 go = st.button("Scarica previsioni per la località selezionata", type="primary")
 
@@ -320,62 +315,65 @@ if go:
         st.success(f"Dati per **{label}** caricati.")
         st.dataframe(res, use_container_width=True)
 
-        # grafici
+        # Grafici rapidi
         t = pd.to_datetime(res["time"])
-        fig1 = plt.figure(); plt.plot(t,res["T2m"],label="T2m"); plt.plot(t,res["T_surf"],label="T_surf"); plt.plot(t,res["T_top5"],label="T_top5")
-        plt.legend(); plt.title("Temperature"); plt.xlabel("Ora"); plt.ylabel("°C"); st.pyplot(fig1)
-        fig2 = plt.figure(); plt.bar(t,res["prp_mmph"]); plt.title("Precipitazione (mm/h)"); plt.xlabel("Ora"); plt.ylabel("mm/h"); st.pyplot(fig2)
+        fig1 = plt.figure()
+        plt.plot(t,res["T2m"],label="T2m"); plt.plot(t,res["T_surf"],label="T_surf"); plt.plot(t,res["T_top5"],label="T_top5")
+        plt.legend(); plt.title("Temperature"); plt.xlabel("Ora"); plt.ylabel("°C")
+        st.pyplot(fig1)
+
+        fig2 = plt.figure()
+        plt.bar(t,res["prp_mmph"])
+        plt.title("Precipitazione (mm/h)"); plt.xlabel("Ora"); plt.ylabel("mm/h")
+        st.pyplot(fig2)
+
         st.download_button("Scarica CSV risultato", data=res.to_csv(index=False), file_name="forecast_with_snowT.csv", mime="text/csv")
 
-        # blocchi A/B/C
+        # Blocchi A / B / C
         for L,(s,e) in {"A":(A_start,A_end),"B":(B_start,B_end),"C":(C_start,C_end)}.items():
             st.markdown(f"### Blocco {L}")
             W = window_slice(res, tzname, s, e)
-            wet = bool(((W["prp_type"].isin(["rain","mixed"])) | (W["prp_mmph"]>0.5)).any())
             t_med = float(W["T_surf"].mean())
             st.markdown(f"**T_surf medio {L}: {t_med:.1f}°C**")
 
-            # Wax cards + loghi
-            cols = st.columns(len(BRANDS))
-            for i,(brand,(col,bands)) in enumerate(BRANDS.items()):
+            # Wax cards + loghi (TUTTI i marchi richiesti)
+            cols = st.columns(4)
+            items = list(BRANDS.items())
+            # riga 1
+            for i,(brand,(col,bands)) in enumerate(items[:4]):
                 rec = pick(bands, t_med)
                 cols[i].markdown(
-                    f"<div class='brand'><img src='{logo(brand.upper(), col)}'/>"
+                    f"<div class='brand'><img src='{logo_svg(brand.upper(), col)}'/>"
+                    f"<div><div style='font-size:.8rem;opacity:.85'>{brand}</div>"
+                    f"<div style='font-weight:800'>{rec}</div></div></div>", unsafe_allow_html=True
+                )
+            # riga 2
+            cols2 = st.columns(4)
+            for i,(brand,(col,bands)) in enumerate(items[4:8]):
+                rec = pick(bands, t_med)
+                cols2[i].markdown(
+                    f"<div class='brand'><img src='{logo_svg(brand.upper(), col)}'/>"
                     f"<div><div style='font-size:.8rem;opacity:.85'>{brand}</div>"
                     f"<div style='font-weight:800'>{rec}</div></div></div>", unsafe_allow_html=True
                 )
 
-            # ---------------- PRESET STRUTTURA ----------------
-            # Suggerimento automatico + override manuale da tendina
-            _, _, _, auto_kind = tune_for(t_med, "GS", wet)
-            preset_names = ["Auto"] + list(STRUCTURE_PRESETS.keys())
-            choice = st.selectbox(
-                f"Preset struttura (Blocco {L})",
-                preset_names,
-                index=0, key=f"preset_{L}",
-                help="Auto sceglie in base a temperatura neve e bagnato; puoi forzare un preset."
-            )
-
-            if choice == "Auto":
-                kind = auto_kind
-                # titolo da dict inverso
-                inv = {v[0]: k for k,v in STRUCTURE_PRESETS.items()}
-                title = inv.get(kind, "Preset automatico")
-                descr = STRUCTURE_PRESETS.get(title, ("",""))[1] if title in STRUCTURE_PRESETS else ""
-            else:
-                kind, descr = STRUCTURE_PRESETS[choice]
-                title = choice
-
+            # Struttura + angoli (SIDE + BASE) con disegno “alla Wintersteiger”
+            (kind, title), side, base = tune_for(t_med, "GS")  # riferimento
+            st.markdown(f"**Struttura consigliata:** {title}  ·  **Lamina SIDE:** {side:.1f}°  ·  **BASE:** {base:.1f}°")
             draw_structure(kind, title)
-            st.markdown(f"<div class='note'>{descr}</div>", unsafe_allow_html=True)
 
-            # Tuning per discipline (angoli side/base)
+            # Tabelle per discipline
             disc = st.multiselect(f"Discipline (Blocco {L})", ["SL","GS","SG","DH"], default=["SL","GS"], key=f"disc_{L}")
             rows = []
             for d in disc:
-                sdesc, side_d, base_d, _ = tune_for(t_med, d, wet)
-                rows.append([d, sdesc, f"{side_d:.1f}°", f"{base_d:.1f}°"])
+                (kind_d, title_d), side_d, base_d = tune_for(t_med, d)
+                rows.append([d, title_d, f"{side_d:.1f}°", f"{base_d:.1f}°"])
             if rows:
-                st.table(pd.DataFrame(rows, columns=["Disciplina","Struttura consigliata","Lamina SIDE (°)","Lamina BASE (°)"]))
+                st.table(pd.DataFrame(rows, columns=["Disciplina","Struttura","Lamina SIDE (°)","Lamina BASE (°)"]))
+
     except Exception as e:
         st.error(f"Errore: {e}")
+
+# Nota: per il live dropdown “stile Meteoblue” serve la libreria:
+#   pip install streamlit-searchbox
+# Se non presente, parte il fallback automatico.
