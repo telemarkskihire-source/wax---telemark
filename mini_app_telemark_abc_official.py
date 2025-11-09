@@ -6,6 +6,13 @@ import matplotlib.pyplot as plt
 from datetime import time
 from dateutil import tz
 
+# --- fallback se streamlit-searchbox non è disponibile ---
+try:
+    from streamlit_searchbox import st_searchbox  # dropdown live stile Meteoblue
+    HAS_SEARCHBOX = True
+except Exception:
+    HAS_SEARCHBOX = False
+
 # ------------------------ PAGE & THEME ------------------------
 PRIMARY = "#10bfcf"; BG = "#0f172a"; CARD = "#0f172a"; TEXT = "#eef2ff"
 st.set_page_config(page_title="Telemark · Pro Wax & Tune", page_icon="❄️", layout="wide")
@@ -14,89 +21,87 @@ st.markdown(f"""
 [data-testid="stAppViewContainer"] > .main {{
   background: linear-gradient(180deg, {BG} 0%, #111827 100%);
 }}
-.block-container {{ padding-top: .8rem; }}
+.block-container {{ padding-top: 0.8rem; }}
 h1,h2,h3,h4,h5, label, p, span, div {{ color:{TEXT}; }}
 .badge {{ border:1px solid rgba(255,255,255,.15); padding:6px 10px; border-radius:999px; font-size:.78rem; opacity:.85; }}
 .card {{ background:{CARD}; border:1px solid rgba(255,255,255,.12); border-radius:16px; padding:14px; box-shadow:0 10px 22px rgba(0,0,0,.25); }}
 .brand {{ display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:12px;
          background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.08); }}
 .brand img {{ height:22px; }}
-.suggest {{ border:1px solid rgba(255,255,255,.15); border-top:0; border-radius:0 0 10px 10px; overflow:hidden; }}
-.suggest-row {{ padding:8px 10px; cursor:pointer; border-top:1px solid rgba(255,255,255,.06); }}
-.suggest-row:hover {{ background:rgba(255,255,255,.06); }}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("### Telemark · Pro Wax & Tune")
-st.markdown("<span class='badge'>Ricerca live · Blocchi A/B/C · 8 marchi sciolina · Strutture & Angoli (SIDE)</span>", unsafe_allow_html=True)
+st.markdown("<span class='badge'>Ricerca tipo Meteoblue · Blocchi A/B/C · Sciolina + Struttura + Angoli (SIDE)</span>", unsafe_allow_html=True)
 
 # ------------------------ UTILS ------------------------
-def flag_emoji(cc: str) -> str:
-    try: cc = cc.upper(); return chr(127397+ord(cc[0]))+chr(127397+ord(cc[1]))
-    except: return "🏳️"
+def flag_emoji(country_code: str) -> str:
+    try:
+        cc = (country_code or "").upper()
+        if len(cc) != 2: return "🏳️"
+        return chr(127397 + ord(cc[0])) + chr(127397 + ord(cc[1]))
+    except Exception:
+        return "🏳️"
 
-def nominatim_search(q: str):
-    if not q or len(q) < 2: return []
+def nominatim_search(query: str):
+    """Ritorna lista di chiavi 'label|||lat,lon' ad ogni tasto (stile meteoblue)."""
+    if not query or len(query) < 2:
+        return []
     try:
         r = requests.get(
             "https://nominatim.openstreetmap.org/search",
-            params={"q": q, "format": "json", "limit": 10, "addressdetails": 1},
+            params={"q": query, "format": "json", "limit": 10, "addressdetails": 1},
             headers={"User-Agent": "telemark-wax-app/1.0"},
             timeout=8
         )
         r.raise_for_status()
         out = []
+        st.session_state._geo_map = {}
         for item in r.json():
-            name = item.get("display_name","")
-            lat = float(item.get("lat",0)); lon = float(item.get("lon",0))
-            cc = (item.get("address",{}) or {}).get("country_code","") or ""
+            name = item.get("display_name", "")
+            lat = float(item.get("lat", 0)); lon = float(item.get("lon", 0))
+            addr = item.get("address", {}) or {}
+            cc = addr.get("country_code", "")
             label = f"{flag_emoji(cc)}  {name}"
-            out.append({"label": label, "lat": lat, "lon": lon})
+            key = f"{label}|||{lat:.6f},{lon:.6f}"
+            st.session_state._geo_map[key] = (lat, lon, label)
+            out.append(key)
         return out
     except Exception:
         return []
 
-# ------------------------ LOCATION (autocomplete puro Streamlit) ------------------------
+# ------------------------ LOCATION (Meteoblue-like) ------------------------
 st.markdown("#### 1) Cerca località")
-if "loc_query" not in st.session_state: st.session_state.loc_query = ""
-if "loc_selected" not in st.session_state: st.session_state.loc_selected = None
 
-def _on_query_change():
-    st.session_state.suggestions = nominatim_search(st.session_state.loc_query)
-
-col1, col2 = st.columns([2,1])
-with col1:
-    st.text_input(
-        "Località",
-        key="loc_query",
+if HAS_SEARCHBOX:
+    selected = st_searchbox(
+        nominatim_search,
+        key="place",
         placeholder="Digita e scegli… (es. Champoluc, Cervinia, Sestriere)",
-        on_change=_on_query_change
+        clear_on_submit=False,
+        default=None
     )
-    sugg = st.session_state.get("suggestions", [])
-    if st.session_state.loc_query and sugg:
-        with st.container():
-            st.markdown("<div class='suggest'>", unsafe_allow_html=True)
-            # mostriamo fino a 8 suggerimenti cliccabili
-            for i, s in enumerate(sugg[:8]):
-                if st.button(s["label"], key=f"sugg_{i}", use_container_width=True):
-                    st.session_state.loc_selected = s
-                    st.session_state.loc_query = s["label"]
-                    st.session_state.suggestions = []
-                    st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
-
-with col2:
-    tzname = st.selectbox("Timezone", ["Europe/Rome", "UTC"], index=0)
-
-# decode selection / fallback
-if st.session_state.loc_selected:
-    lat = st.session_state.loc_selected["lat"]
-    lon = st.session_state.loc_selected["lon"]
-    label = st.session_state.loc_selected["label"]
 else:
-    lat, lon, label = 45.831, 7.730, "Champoluc (Ramey)"
+    # Fallback leggero se streamlit-searchbox non è installato (funziona comunque in tempo reale)
+    q = st.text_input("Digita località…", placeholder="Es. Champoluc, Cervinia, Sestriere", key="q")
+    opts = nominatim_search(q)
+    selected = st.selectbox("Suggerimenti", [""] + opts, index=0, label_visibility="collapsed")
 
-hours = st.slider("Ore previsione", 12, 168, 72, 12)
+# decode selection -> lat,lon,label
+if selected and "|||" in selected and "_geo_map" in st.session_state:
+    lat, lon, label = st.session_state._geo_map.get(selected, (45.831, 7.730, "Champoluc (Ramey)"))
+    st.session_state.sel_lat, st.session_state.sel_lon, st.session_state.sel_label = lat, lon, label
+
+# fallback default
+lat = st.session_state.get("sel_lat", 45.831)
+lon = st.session_state.get("sel_lon", 7.730)
+label = st.session_state.get("sel_label", "Champoluc (Ramey)")
+
+coltz, colh = st.columns([1,2])
+with coltz:
+    tzname = st.selectbox("Timezone", ["Europe/Rome", "UTC"], index=0)
+with colh:
+    hours = st.slider("Ore previsione", 12, 168, 72, 12)
 
 # ------------------------ WINDOWS A/B/C ------------------------
 st.markdown("#### 2) Finestre orarie A · B · C (oggi)")
@@ -139,7 +144,7 @@ def _prp_type(df):
 
 def build_df(js, hours):
     h = js["hourly"]; df = pd.DataFrame(h)
-    df["time"] = pd.to_datetime(df["time"])
+    df["time"] = pd.to_datetime(df["time"])         # naive
     now0 = pd.Timestamp.now().floor("H")
     df = df[df["time"] >= now0].head(hours).reset_index(drop=True)
     out = pd.DataFrame()
@@ -191,66 +196,62 @@ def window_slice(res, tzname, s, e):
     W = D[(D["dt"].dt.date==today) & (D["dt"].dt.time>=s) & (D["dt"].dt.time<=e)]
     return W if not W.empty else D.head(7)
 
-# ------------------------ WAX BANDS (8 marchi) ------------------------
+# ------------------------ WAX BANDS (4 marchi base) ------------------------
 SWIX = [("PS5 Turquoise", -18,-10), ("PS6 Blue",-12,-6), ("PS7 Violet",-8,-2), ("PS8 Red",-4,4), ("PS10 Yellow",0,10)]
 TOKO = [("Blue",-30,-9), ("Red",-12,-4), ("Yellow",-6,0)]
-VOLA = [("MX-E Blue",-25,-10), ("MX-E Violet",-12,-4), ("MX-E Red",-5,0), ("MX-E Yellow",-2,6)]
+VOLA = [("MX-E Violet/Blue",-12,-4), ("MX-E Red",-5,0), ("MX-E Warm",-2,10)]
 RODE = [("R20 Blue",-18,-8), ("R30 Violet",-10,-3), ("R40 Red",-5,0), ("R50 Yellow",-1,10)]
-HOLM = [("Ultra/Alpha Mix Blue",-20,-8), ("BetaMix Red",-14,-4), ("AlphaMix Yellow",-4,5)]
-MAPL = [("Universal Cold",-12,-6), ("Universal Medium",-7,-2), ("Universal Soft",-5,0)]
-START= [("SG Blue",-12,-6), ("SG Purple",-8,-2), ("SG Red",-3,7)]
-SKIGO= [("Blue",-12,-6), ("Violet",-8,-2), ("Red",-3,2)]
-BRAND_BANDS = [
-    ("Swix"      ,"#ef4444", SWIX),
-    ("Toko"      ,"#f59e0b", TOKO),
-    ("Vola"      ,"#3b82f6", VOLA),
-    ("Rode"      ,"#22c55e", RODE),
-    ("Holmenkol" ,"#06b6d4", HOLM),
-    ("Maplus"    ,"#f97316", MAPL),
-    ("Start"     ,"#eab308", START),
-    ("Skigo"     ,"#a855f7", SKIGO),
-]
 def pick(bands, t):
     for n,tmin,tmax in bands:
         if t>=tmin and t<=tmax: return n
     return bands[-1][0] if t>bands[-1][2] else bands[0][0]
 
+def logo(text, color):
+    svg = f"<svg xmlns='http://www.w3.org/2000/svg' width='160' height='36'><rect width='160' height='36' rx='6' fill='{color}'/><text x='12' y='24' font-size='16' font-weight='700' fill='white'>{text}</text></svg>"
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("utf-8")
+
+BRANDS = {
+    "Swix": ("#ef4444", SWIX),
+    "Toko": ("#f59e0b", TOKO),
+    "Vola": ("#3b82f6", VOLA),
+    "Rode": ("#22c55e", RODE),
+}
+
 # ------------------------ STRUCTURE & EDGES ------------------------
 def tune_for(t_surf, discipline):
-    # family, side°, base°
+    # SIDE (gradi) + BASE (gradi) e struttura consigliata
     if t_surf <= -10:
-        fam = ("linear","Lineare fine (freddo/secco)")
+        structure = "Freddo/Secco · Lineare fine"
         base = 0.5; side_map = {"SL":88.5, "GS":88.0, "SG":87.5, "DH":87.5}
     elif t_surf <= -3:
-        fam = ("cross","Universale incrociata / leggera onda")
+        structure = "Universale · Onda convessa"
         base = 0.7; side_map = {"SL":88.0, "GS":88.0, "SG":87.5, "DH":87.0}
     else:
-        fam = ("V","Scarico a V / diagonale (umido/caldo)")
+        structure = "Caldo/Umido · Scarico diagonale"
         base = 0.8 if t_surf <= 0.5 else 1.0
         side_map = {"SL":88.0, "GS":87.5, "SG":87.0, "DH":87.0}
-    return fam, side_map.get(discipline, 88.0), base
+    return structure, side_map.get(discipline, 88.0), base
 
 def draw_structure(kind: str, title: str):
-    # preview stile Wintersteiger
-    fig = plt.figure(figsize=(3.4, 2.0), dpi=180)
-    ax = plt.gca(); ax.set_facecolor("#d6d6d6")
+    # anteprima semplice (da rifinire dopo): soletta grigia + gole scure
+    fig = plt.figure(figsize=(3.2, 2.2), dpi=160)
+    ax = plt.gca(); ax.set_facecolor("#d4d4d8")
     ax.set_xlim(0, 100); ax.set_ylim(0, 60); ax.axis('off')
     color = "#2b2b2b"
     if kind == "linear":
-        for x in range(8, 98, 5): ax.plot([x, x], [6, 54], color=color, linewidth=2.6, solid_capstyle="round")
-    elif kind == "cross":
-        for x in range(-10, 120, 10): ax.plot([x, x+50], [6, 54], color=color, linewidth=2.2, alpha=0.95)
-        for x in range(10, 110, 10):  ax.plot([x, x-50], [6, 54], color=color, linewidth=2.2, alpha=0.95)
-    elif kind == "V":
-        for x in range(-10, 120, 8):
-            ax.plot([x, 50], [6, 30], color=color, linewidth=2.6, alpha=0.95)
-            ax.plot([x, 50], [54, 30], color=color, linewidth=2.6, alpha=0.95)
+        for x in range(10, 90, 6):
+            ax.plot([x, x], [5, 55], color=color, linewidth=2.3, solid_capstyle="round")
+    elif kind == "wave":
+        import numpy as np
+        xs = np.linspace(5, 95, 9)
+        for x in xs:
+            yy = 30 + 20*np.sin(np.linspace(-math.pi, math.pi, 60))
+            ax.plot(np.full_like(yy, x), yy, color=color, linewidth=2.3, solid_capstyle="round")
+    elif kind == "diagonal":
+        for x in range(-20, 120, 8):
+            ax.plot([x, x+50], [5, 55], color=color, linewidth=2.6, solid_capstyle="round")
     ax.set_title(title, fontsize=10, pad=4)
     st.pyplot(fig)
-
-def logo_badge(text, color):
-    svg = f"<svg xmlns='http://www.w3.org/2000/svg' width='160' height='36'><rect width='160' height='36' rx='6' fill='{color}'/><text x='12' y='24' font-size='16' font-weight='700' fill='white'>{text}</text></svg>"
-    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("utf-8")
 
 # ------------------------ RUN ------------------------
 st.markdown("#### 3) Scarica dati meteo & calcola")
@@ -264,40 +265,46 @@ if go:
         st.success(f"Dati per **{label}** caricati.")
         st.dataframe(res, use_container_width=True)
 
+        # grafici
         t = pd.to_datetime(res["time"])
         fig1 = plt.figure(); plt.plot(t,res["T2m"],label="T2m"); plt.plot(t,res["T_surf"],label="T_surf"); plt.plot(t,res["T_top5"],label="T_top5")
         plt.legend(); plt.title("Temperature"); plt.xlabel("Ora"); plt.ylabel("°C"); st.pyplot(fig1)
         fig2 = plt.figure(); plt.bar(t,res["prp_mmph"]); plt.title("Precipitazione (mm/h)"); plt.xlabel("Ora"); plt.ylabel("mm/h"); st.pyplot(fig2)
         st.download_button("Scarica CSV risultato", data=res.to_csv(index=False), file_name="forecast_with_snowT.csv", mime="text/csv")
 
+        # blocchi A/B/C
         for L,(s,e) in {"A":(A_start,A_end),"B":(B_start,B_end),"C":(C_start,C_end)}.items():
             st.markdown(f"### Blocco {L}")
             W = window_slice(res, tzname, s, e)
             t_med = float(W["T_surf"].mean())
             st.markdown(f"**T_surf medio {L}: {t_med:.1f}°C**")
 
-            # 8 marchi wax
-            cols = st.columns(4); cols2 = st.columns(4)
-            for i,(brand,col,bands) in enumerate(BRAND_BANDS[:4]):
+            # Wax cards + loghi (4 marchi base, puoi reinserire gli altri dopo)
+            cols = st.columns(len(BRANDS))
+            for i,(brand,(col,bands)) in enumerate(BRANDS.items()):
+                rec = pick(bands, t_med)
                 cols[i].markdown(
-                    f"<div class='brand'><img src='{logo_badge(brand.upper(), col)}'/>"
+                    f"<div class='brand'><img src='{logo(brand.upper(), col)}'/>"
                     f"<div><div style='font-size:.8rem;opacity:.85'>{brand}</div>"
-                    f"<div style='font-weight:800'>{pick(bands, t_med)}</div></div></div>", unsafe_allow_html=True)
-            for i,(brand,col,bands) in enumerate(BRAND_BANDS[4:]):
-                cols2[i].markdown(
-                    f"<div class='brand'><img src='{logo_badge(brand.upper(), col)}'/>"
-                    f"<div><div style='font-size:.8rem;opacity:.85'>{brand}</div>"
-                    f"<div style='font-weight:800'>{pick(bands, t_med)}</div></div></div>", unsafe_allow_html=True)
+                    f"<div style='font-weight:800'>{rec}</div></div></div>", unsafe_allow_html=True
+                )
 
-            fam, side, base = tune_for(t_med, "GS")
-            st.markdown(f"**Struttura consigliata:** {fam[1]}  ·  **Lamina SIDE:** {side:.1f}°  ·  **BASE:** {base:.1f}°")
-            draw_structure(fam[0], fam[1])
+            # Struttura consigliata + disegno
+            structure, side, base = tune_for(t_med, "GS")  # default reference
+            st.markdown(f"**Struttura consigliata:** {structure}  ·  **Lamina SIDE:** {side:.1f}°  ·  **BASE:** {base:.1f}°")
+            if "Lineare" in structure:
+                draw_structure("linear", "Freddo/Secco · Lineare fine")
+            elif "Onda" in structure:
+                draw_structure("wave", "Universale · Onda convessa")
+            else:
+                draw_structure("diagonal", "Caldo/Umido · Scarico diagonale")
 
+            # Tuning per discipline
             disc = st.multiselect(f"Discipline (Blocco {L})", ["SL","GS","SG","DH"], default=["SL","GS"], key=f"disc_{L}")
             rows = []
             for d in disc:
-                fam_d, side_d, base_d = tune_for(t_med, d)
-                rows.append([d, fam_d[1], f"{side_d:.1f}°", f"{base_d:.1f}°"])
+                sname, side_d, base_d = tune_for(t_med, d)
+                rows.append([d, sname, f"{side_d:.1f}°", f"{base_d:.1f}°"])
             if rows:
                 st.table(pd.DataFrame(rows, columns=["Disciplina","Struttura","Lamina SIDE (°)","Lamina BASE (°)"]))
     except Exception as e:
