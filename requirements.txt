@@ -1,1 +1,6 @@
-
+streamlit==1.39.0
+pandas>=2.0
+requests>=2.31
+python-dateutil>=2.8.2
+matplotlib>=3.8
+streamlit-searchbox==0.3.0
