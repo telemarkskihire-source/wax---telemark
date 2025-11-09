@@ -1,6 +1,1 @@
-streamlit
-pandas
-requests
-python-dateutil
-matplotlib
-streamlit-js-eval
+pip install streamlit pandas requests python-dateutil matplotlib streamlit-searchbox
