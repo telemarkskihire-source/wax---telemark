@@ -1,7 +1,6 @@
 streamlit
 pandas
 requests
-python-dateutil
 matplotlib
-streamlit-searchbox
+python-dateutil
 streamlit-searchbox==0.3.2
